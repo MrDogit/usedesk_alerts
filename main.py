@@ -1,29 +1,30 @@
 import time
 import requests
-from json import load as json_load
+from configparser import ConfigParser
 from threading import Thread
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-    
 
 # OPTIONS #
 
 url = 'https://secure.usedesk.ru/tickets'
 
-f = open('secrets.json')
-json = json_load(f)
-f.close()
-cookies = json['chrome']
-telegram_api_token = json['telegram']['api_token']
-telegram_chat_id = json['telegram']['chat_id']
+config = ConfigParser()
+config.read('secrets.ini', encoding='utf-8')
+url = config.get('chrome', 'url', raw=True)
+cookies = { config.get('chrome', 'cookie_key') : config.get('chrome', 'cookie_value', raw=True) }
+telegram_api_token = config.get('telegram', 'api_token')
+telegram_chat_id = config.get('telegram', 'chat_id')
+try: debug = config.get('python', 'debug') == 'True'
+except: pass
 
 options = Options()
 options.add_argument('--ignore-certificate-errors') # try to fix handshake failed
 options.add_argument('--ignore-ssl-errors')         # try to fix handshake failed
 options.add_argument('--no-sandbox')
 options.add_argument('--disable-dev-shm-usage')
-options.add_argument('--headless=new')
+if not debug: options.add_argument('--headless=new')
 
 # START #
 
@@ -54,7 +55,6 @@ driver.get(url)
 
 def get_fresh_count_tickets():
         driver.refresh()
-        time.sleep(10)
         try:
             tickets_names = driver.find_elements(By.CLASS_NAME, 'ticket_status')
             count = 0
@@ -83,8 +83,12 @@ def use_data(pre_count_tickets, count_tickets):
     else:
         print('ERROR: use_data ifelse statements')
 
-def alarm(count_nodata = None):
-    print('ALARM!', count_nodata)
+def alarm(error, count = 0):
+    print('ALARM!', error)
+    if count > 0 and count % 3 == 0:
+        telegram_bot_sendtext_and_check(f'ALARM! Нет данных уже {count*10} секунд. Возможно сервер лёг.')
+    else:
+        telegram_bot_sendtext(error)
     
 #search_box = driver.find_element('name', 'q')
 #search_box.send_keys('ChromeDriver')
@@ -105,7 +109,7 @@ while True:
         count_nodata +=1
         print('NoData')
         if count_nodata > 3:
-            alarm(count_nodata)
+            alarm(f'Нет данных {count_nodata} раз.', count_nodata)
     
     
     time.sleep(10)
